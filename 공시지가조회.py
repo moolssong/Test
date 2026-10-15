@@ -2,9 +2,7 @@ import streamlit as st
 import requests
 import pandas as pd
 import io
-import re
 
-# 페이지 설정
 st.set_page_config(page_title="브이월드 공시지가 일괄 조회기", page_icon="🏰", layout="wide")
 
 st.title("🏰 브이월드 공시지가 자동 일괄 조회 앱")
@@ -33,7 +31,6 @@ input_text = st.text_area(
     placeholder="울산광역시 울주군 삼남읍 가천리 산23\n서울시 관악구 봉천동 464-1"
 )
 
-# 브이월드 API 연동 함수 (주소검색 -> PNU 추출 -> 개별공시지가 조회)
 def query_vworld_land_price(api_key, year, address):
     geo_url = "https://api.vworld.kr/req/search"
     params = {
@@ -52,15 +49,23 @@ def query_vworld_land_price(api_key, year, address):
     
     try:
         response = requests.get(geo_url, params=params, timeout=5)
-        res_data = response.json()
+        
+        # 응답이 JSON 형식인지 먼저 확인
+        try:
+            res_data = response.json()
+        except Exception:
+            return {
+                "PNU": "API응답오류",
+                "공시지가(원/㎡)": "-",
+                "조회상태": f"API 응답이 JSON이 아님 (상태코드: {response.status_code})"
+            }
         
         if res_data.get("response", {}).get("status") == "OK":
             items = res_data["response"]["result"]["items"]
             if items:
                 item = items[0]
-                pnu = item.get("id", "") # PNU 코드 추출
+                pnu = item.get("id", "")
                 
-                # 개별공시지가 API 호출
                 price_url = "https://api.vworld.kr/ned/data/getIndvdLandPriceAttr"
                 price_params = {
                     "key": api_key,
@@ -70,7 +75,15 @@ def query_vworld_land_price(api_key, year, address):
                     "pnu": pnu
                 }
                 price_resp = requests.get(price_url, params=price_params, timeout=5)
-                price_json = price_resp.json()
+                
+                try:
+                    price_json = price_resp.json()
+                except Exception:
+                    return {
+                        "PNU": pnu,
+                        "공시지가(원/㎡)": "-",
+                        "조회상태": "지가 API 응답 형식 오류"
+                    }
                 
                 fields = price_json.get("indvdLandPrices", {}).get("field", [])
                 if fields:
@@ -85,12 +98,12 @@ def query_vworld_land_price(api_key, year, address):
                     return {
                         "PNU": pnu,
                         "공시지가(원/㎡)": "지가정보없음",
-                        "조회상태": "성공(지가없음)"
+                        "조회상태": "성공(지가데이터 없음)"
                     }
         return {
             "PNU": "추출실패",
             "공시지가(원/㎡)": "-",
-            "조회상태": "주소검색실패"
+            "조회상태": "주소검색 결과 없음 (API키 또는 주소 확인 필요)"
         }
     except Exception as e:
         return {
