@@ -3,44 +3,45 @@ import requests
 import pandas as pd
 import io
 import re
+import xml.etree.ElementTree as ET
 
 # 페이지 설정
 st.set_page_config(page_title="브이월드 개별공시지가 일괄 조회기", page_icon="🏰", layout="wide")
 
-st.title("🏰 브이월드 개별공시지가 자동 일괄 조회 앱")
+st.title("🏰 브이월드 개별공시지가 자동 일괄 조회 앱 (스트림릿 XML 버전)")
 st.write("주소 목록을 복사·붙여넣기 하시면, PNU 자동 추출 및 브이월드 개별공시지가 조회가 이루어집니다. 🍰")
 
 col1, col2 = st.columns([2, 1])
 with col1:
     vworld_key = st.text_input(
         "🔑 브이월드(V-World) API 인증키",
-        type="password",
-        placeholder="여기에 API 키를 입력하세요"
+        value="BDBA5B54-21BB-4931-8C7C-D9FAFB79580",  # 스트림릿 등록용 키 기본 세팅
+        type="password"
     )
 with col2:
     std_year = st.text_input(
         "📅 기준연도",
-        value="2024",
-        placeholder="예: 2024"
+        value="2026",
+        placeholder="예: 2026"
     )
 
 st.markdown("### 📋 주소 목록 입력")
-st.info("💡 **입력 팁:** 엑셀이나 메모장에서 주소와 번지가 포함된 텍스트를 복사해서 아래 칸에 그대로 붙여넣어 주세요. (예: `울산광역시 울주군 삼남읍 가천리 산23`)")
+st.info("💡 **입력 팁:** 주소와 번지가 포함된 텍스트를 줄바꿈 단위로 입력해 주세요.")
 
 input_text = st.text_area(
     "주소를 줄바꿈 단위로 입력하세요",
     height=200,
-    placeholder="울산광역시 울주군 삼남읍 가천리 산23\n경기도 가평군 가평읍 대곡리 568-9"
+    placeholder="경상남도 사천시 용현면 신복리 678-3\n경상남도 사천시 용현면 신복리 678-5"
 )
 
-# 공통 브라우저 위장 헤더 (방화벽 차단 우회용)
+# 브라우저 위장 헤더 (방화벽 차단 우회)
 HEADERS = {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
 }
 
-# PNU 생성 및 공시지가 조회 함수
+# PNU 생성 및 공시지가 조회 함수 (XML 파싱 방식)
 def get_land_price_from_address(address_line, api_key, year):
-    # 1. 산번지 여부 파악 ("산"이 포함되면 구분코드 '2', 아니면 '1')
+    # 1. 산번지 여부 파악
     has_mountain = "산" in address_line
     lot_division = "2" if has_mountain else "1"
     
@@ -56,7 +57,7 @@ def get_land_price_from_address(address_line, api_key, year):
         bonbun = raw_bunji.zfill(4)
         bubun = "0000"
         
-    # 3. 법정동 코드 획득을 위한 주소 검색 API 호출
+    # 3. 법정동 코드 획득
     geo_url = "https://api.vworld.kr/req/search"
     geo_params = {
         "service": "search",
@@ -72,7 +73,7 @@ def get_land_price_from_address(address_line, api_key, year):
         "key": api_key
     }
     
-    bjd_code = "4824033000" # 기본 fallback 코드
+    bjd_code = "4824033000"
     try:
         resp = requests.get(geo_url, params=geo_params, headers=HEADERS, timeout=5)
         data = resp.json()
@@ -88,7 +89,7 @@ def get_land_price_from_address(address_line, api_key, year):
     # 최종 19자리 PNU 조합
     constructed_pnu = f"{bjd_code}{lot_division}{bonbun}{bubun}"
     
-    # 4. 개별공시지가 속성 API 호출 (정확한 API 규격, stdrYear 파라미터 및 브라우저 헤더 적용)
+    # 4. 개별공시지가 속성 API 호출 (스트림릿 도메인 및 XML 형식 적용)
     price_val = "지가 조회 실패"
     status_msg = "성공"
     
@@ -96,23 +97,36 @@ def get_land_price_from_address(address_line, api_key, year):
         price_url = "https://api.vworld.kr/ned/data/getIndvdLandPriceAttr"
         price_params = {
             "key": api_key,
-            "domain": "wrwkpsgunvbdyepgnksjzp.streamlit.app",
-            "format": "json",
-            "stdrYear": year,   # 공식 파라미터 이름 (stdrYear)
-            "pnu": constructed_pnu
+            "domain": "wrwkpsgunvbdyepgnksjzp.streamlit.app",  # 스트림릿 등록 도메인 정확히 일치
+            "format": "xml",                                  # 엑셀과 동일한 XML 방식
+            "stdrYear": year,                                 # 공식 파라미터 stdrYear
+            "pnu": constructed_pnu,
+            "numOfRows": 1,
+            "pageNo": 1
         }
         price_resp = requests.get(price_url, params=price_params, headers=HEADERS, timeout=5)
         
-        try:
-            price_json = price_resp.json()
-            fields = price_json.get("indvdLandPrices", {}).get("field", [])
-            if fields:
-                price_val = fields[0].get("indvdLandPrice", "정보없음")
-            else:
-                price_val = "해당연도 지가데이터 없음"
-                status_msg = "데이터 없음"
-        except Exception:
-            status_msg = f"API 응답 형식 오류 (내용: {price_resp.text[:50]})"
+        if price_resp.status_code == 200:
+            try:
+                root = ET.fromstring(price_resp.text)
+                pclnd_elem = root.find(".//pblntfPclnd")
+                if pclnd_elem is not None and pclnd_elem.text:
+                    price_val = pclnd_elem.text
+                else:
+                    found = False
+                    for elem in root.iter():
+                        if "pclnd" in elem.tag.lower() or "price" in elem.tag.lower():
+                            if elem.text and elem.text.strip():
+                                price_val = elem.text.strip()
+                                found = True
+                                break
+                    if not found:
+                        price_val = "해당연도 지가데이터 없음"
+                        status_msg = "데이터 없음"
+            except Exception as ex:
+                status_msg = f"XML 파싱 에러: {str(ex)}"
+        else:
+            status_msg = f"HTTP 에러: {price_resp.status_code}"
             
     except Exception as e:
         status_msg = f"에러: {str(e)}"
@@ -126,7 +140,7 @@ def get_land_price_from_address(address_line, api_key, year):
 
 if st.button("🚀 PNU 생성 및 공시지가 폭풍 조회 시작!", type="primary"):
     if not vworld_key.strip():
-        st.warning("⚠️ 브이월드 API 인증키를 먼저 입력해 주세요!")
+        st.warning("⚠️ 브이월드 API 인증키를 입력해 주세요!")
     elif not input_text.strip():
         st.warning("⚠️ 조회할 주소를 하나 이상 입력해 주세요!")
     else:
