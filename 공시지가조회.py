@@ -35,7 +35,6 @@ input_text = st.text_area(
 
 # 1. 주소를 분석하여 자체적으로 PNU 코드 구조를 추출/생성하는 함수
 def generate_pnu_from_address(address_line, api_key):
-    # 브이월드 검색 API를 통해 행정구역(법정동) 코드와 PNU를 확보하면서 자체 생성 로직 비교
     geo_url = "https://api.vworld.kr/req/search"
     params = {
         "service": "search",
@@ -78,8 +77,6 @@ def generate_pnu_from_address(address_line, api_key):
                 item = items[0]
                 api_pnu = item.get("id", "") # 브이월드가 반환한 PNU (19자리)
                 
-                # 만약 API PNU가 있다면 앞 10자리(시군구+읍면동+리 코드)를 가져와서 
-                # 우리가 파싱한 산구분(1자리) + 본번(4자리) + 부번(4자리)과 결합하여 '내가 생성한 PNU' 완성!
                 if len(api_pnu) >= 10:
                     bjd_code = api_pnu[:10]
                     my_generated_pnu = f"{bjd_code}{lot_division}{bonbun}{bubun}"
@@ -142,10 +139,7 @@ if st.button("🚀 PNU 생성 및 공시지가 폭풍 조회 시작!", type="pri
         for i, line in enumerate(lines):
             status_text.text(f"⏳ 처리 중... ({i+1}/{total_count}): {line}")
             
-            # PNU 생성 및 추출
             pnu_info = generate_pnu_from_address(line, vworld_key)
-            
-            # 생성된(또는 API가 준) PNU로 공시지가 조회 (여기서는 우리가 생성한 정밀 PNU 우선 사용)
             target_pnu = pnu_info["my_pnu"] if len(pnu_info["my_pnu"]) == 19 else pnu_info["api_pnu"]
             land_price = get_land_price(vworld_key, std_year, target_pnu)
             
@@ -180,4 +174,5 @@ if st.button("🚀 PNU 생성 및 공시지가 폭풍 조회 시작!", type="pri
             label="📥 결과 엑셀 파일로 다운로드하기",
             data=excel_data,
             file_name="pnu_and_land_price_result.xlsx",
-            mime="application/vnd.openxml
+            mime="application/vnd.openxmlformats-officedocument.spreadsheet.sheet"
+        )
