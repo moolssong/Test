@@ -5,17 +5,17 @@ import io
 import re
 
 # 페이지 설정
-st.set_page_config(page_title="주소-PNU 및 개별공시지가 조회기", page_icon="🏰", layout="wide")
+st.set_page_config(page_title="브이월드 개별공시지가 일괄 조회기", page_icon="🏰", layout="wide")
 
-st.title("🏰 주소 기반 PNU 생성 및 공시지가 실시간 조회 앱")
-st.write("주소 목록을 복사·붙여넣기 하시면, 정밀 PNU 코드 생성과 함께 브이월드 개별공시지가를 조회하여 엑셀 파일로 다운로드해 드립니다. 🍰")
+st.title("🏰 브이월드 개별공시지가 자동 일괄 조회 앱")
+st.write("주소 목록을 복사·붙여넣기 하시면, PNU 자동 추출 및 브이월드 개별공시지가 조회가 이루어집니다. 🍰")
 
 col1, col2 = st.columns([2, 1])
 with col1:
     vworld_key = st.text_input(
-        "🔑 브이월드 API 인증키",
+        "🔑 브이월드(V-World) API 인증키",
         type="password",
-        placeholder="브이월드 API 키를 입력하세요"
+        placeholder="여기에 API 키를 입력하세요"
     )
 with col2:
     std_year = st.text_input(
@@ -30,16 +30,16 @@ st.info("💡 **입력 팁:** 엑셀이나 메모장에서 주소와 번지가 �
 input_text = st.text_area(
     "주소를 줄바꿈 단위로 입력하세요",
     height=200,
-    placeholder="울산광역시 울주군 삼남읍 가천리 산23\n경상남도 사천시 용현면 온정리 8-5"
+    placeholder="울산광역시 울주군 삼남읍 가천리 산23\n경기도 가평군 가평읍 대곡리 568-9"
 )
 
-# 1. PNU 생성 함수
-def generate_pnu_and_get_price(address_line, api_key, year):
-    # 산번지 여부 파악 ("산"이 포함되면 구분코드 '2', 아니면 '1')
+# PNU 생성 및 공시지가 조회 함수
+def get_land_price_from_address(address_line, api_key, year):
+    # 1. 산번지 여부 파악 ("산"이 포함되면 구분코드 '2', 아니면 '1')
     has_mountain = "산" in address_line
     lot_division = "2" if has_mountain else "1"
     
-    # 번지 추출
+    # 2. 번지 추출
     match = re.search(r'산?\s*([0-9\-]+)', address_line)
     raw_bunji = match.group(1) if match else "0"
     
@@ -51,7 +51,7 @@ def generate_pnu_and_get_price(address_line, api_key, year):
         bonbun = raw_bunji.zfill(4)
         bubun = "0000"
         
-    # 주소 검색 API를 통해 법정동 코드(앞 10자리) 획득 시도
+    # 3. 법정동 코드 획득을 위한 주소 검색 API 호출
     geo_url = "https://api.vworld.kr/req/search"
     geo_params = {
         "service": "search",
@@ -67,9 +67,9 @@ def generate_pnu_and_get_price(address_line, api_key, year):
         "key": api_key
     }
     
-    bjd_code = "4824033000" # 기본 fallback 법정동 코드
+    bjd_code = "4824033000" # 기본 fallback 코드
     try:
-        resp = requests.get(geo_url, params=geo_params, timeout=4)
+        resp = requests.get(geo_url, params=geo_params, timeout=5)
         data = resp.json()
         if data.get("response", {}).get("status") == "OK":
             items = data["response"]["result"]["items"]
@@ -83,7 +83,7 @@ def generate_pnu_and_get_price(address_line, api_key, year):
     # 최종 19자리 PNU 조합
     constructed_pnu = f"{bjd_code}{lot_division}{bonbun}{bubun}"
     
-    # 2. 공시지가 조회 API 호출 (타임아웃 및 예외 처리 강화)
+    # 4. 개별공시지가 속성 API 호출 (정확한 API 규격 및 stdrYear 파라미터 적용)
     price_val = "지가 조회 실패"
     status_msg = "성공"
     
@@ -93,12 +93,11 @@ def generate_pnu_and_get_price(address_line, api_key, year):
             "key": api_key,
             "domain": "wrwkpsgunvbdyepgnksjzp.streamlit.app",
             "format": "json",
-            "stdYear": year,
+            "stdrYear": year,   # <-- 수정된 공식 파라미터 이름 (stdrYear)
             "pnu": constructed_pnu
         }
         price_resp = requests.get(price_url, params=price_params, timeout=5)
         
-        # 응답이 JSON인지 체크
         try:
             price_json = price_resp.json()
             fields = price_json.get("indvdLandPrices", {}).get("field", [])
@@ -108,10 +107,8 @@ def generate_pnu_and_get_price(address_line, api_key, year):
                 price_val = "해당연도 지가데이터 없음"
                 status_msg = "데이터 없음"
         except Exception:
-            status_msg = "API 응답 형식 오류 (HTML 반환 등)"
+            status_msg = f"API 응답 형식 오류 (내용: {price_resp.text[:50]})"
             
-    except requests.exceptions.Timeout:
-        status_msg = "API 요청 시간 초과 (Timeout)"
     except Exception as e:
         status_msg = f"에러: {str(e)}"
         
@@ -139,7 +136,7 @@ if st.button("🚀 PNU 생성 및 공시지가 폭풍 조회 시작!", type="pri
         for i, line in enumerate(lines):
             status_text.text(f"⏳ 조회 중... ({i+1}/{total_count}): {line}")
             
-            res = generate_pnu_and_get_price(line, vworld_key, std_year)
+            res = get_land_price_from_address(line, vworld_key, std_year)
             
             results_data.append({
                 "입력주소": line,
