@@ -33,6 +33,11 @@ input_text = st.text_area(
     placeholder="울산광역시 울주군 삼남읍 가천리 산23\n경기도 가평군 가평읍 대곡리 568-9"
 )
 
+# 공통 브라우저 위장 헤더 (방화벽 차단 우회용)
+HEADERS = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+}
+
 # PNU 생성 및 공시지가 조회 함수
 def get_land_price_from_address(address_line, api_key, year):
     # 1. 산번지 여부 파악 ("산"이 포함되면 구분코드 '2', 아니면 '1')
@@ -69,7 +74,7 @@ def get_land_price_from_address(address_line, api_key, year):
     
     bjd_code = "4824033000" # 기본 fallback 코드
     try:
-        resp = requests.get(geo_url, params=geo_params, timeout=5)
+        resp = requests.get(geo_url, params=geo_params, headers=HEADERS, timeout=5)
         data = resp.json()
         if data.get("response", {}).get("status") == "OK":
             items = data["response"]["result"]["items"]
@@ -83,7 +88,7 @@ def get_land_price_from_address(address_line, api_key, year):
     # 최종 19자리 PNU 조합
     constructed_pnu = f"{bjd_code}{lot_division}{bonbun}{bubun}"
     
-    # 4. 개별공시지가 속성 API 호출 (정확한 API 규격 및 stdrYear 파라미터 적용)
+    # 4. 개별공시지가 속성 API 호출 (정확한 API 규격, stdrYear 파라미터 및 브라우저 헤더 적용)
     price_val = "지가 조회 실패"
     status_msg = "성공"
     
@@ -93,10 +98,10 @@ def get_land_price_from_address(address_line, api_key, year):
             "key": api_key,
             "domain": "wrwkpsgunvbdyepgnksjzp.streamlit.app",
             "format": "json",
-            "stdrYear": year,   # <-- 수정된 공식 파라미터 이름 (stdrYear)
+            "stdrYear": year,   # 공식 파라미터 이름 (stdrYear)
             "pnu": constructed_pnu
         }
-        price_resp = requests.get(price_url, params=price_params, timeout=5)
+        price_resp = requests.get(price_url, params=price_params, headers=HEADERS, timeout=5)
         
         try:
             price_json = price_resp.json()
