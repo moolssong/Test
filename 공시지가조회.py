@@ -26,7 +26,7 @@ col1, col2 = st.columns([2, 1])
 with col1:
     vworld_key = st.text_input(
         "🔑 브이월드(V-World) API 인증키",
-        value=get_secret("VWORLD_KEY"),  # 키는 코드에 적지 말고 Streamlit Secrets에 등록
+        value=get_secret("VWORLD_KEY", "E6CE8D99-9102-4628-B14F-6FA339CACC6E"),  # 스트림릿 등록용 키 기본 세팅
         type="password"
     )
 with col2:
