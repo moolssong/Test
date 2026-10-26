@@ -52,13 +52,21 @@ HEADERS = {
 
 # PNU 생성 및 공시지가 조회 함수 (XML 파싱 방식)
 def get_land_price_from_address(address_line, api_key, year):
-    # 1~2. 주소 끝의 번지에서 산번지 여부와 본번/부번 추출
-    # ("부산", "산청군"처럼 지명에 들어간 "산"을 산번지로 오인하지 않도록 번지 바로 앞의 "산"만 인정)
-    match = re.search(r'(?:^|\s)(산\s*)?(\d+)(?:-(\d+))?\s*(?:번지)?\s*$', address_line)
-    has_mountain = bool(match and match.group(1))
+    # 1. 산번지 여부 파악
+    has_mountain = "산" in address_line
     lot_division = "2" if has_mountain else "1"
-    bonbun = match.group(2).zfill(4) if match else "0000"
-    bubun = (match.group(3) or "0").zfill(4) if match else "0000"
+    
+    # 2. 번지 추출
+    match = re.search(r'산?\s*([0-9\-]+)', address_line)
+    raw_bunji = match.group(1) if match else "0"
+    
+    if "-" in raw_bunji:
+        parts = raw_bunji.split("-")
+        bonbun = parts[0].zfill(4)
+        bubun = parts[1].zfill(4)
+    else:
+        bonbun = raw_bunji.zfill(4)
+        bubun = "0000"
         
     # 3. 법정동 코드 획득
     geo_url = "https://api.vworld.kr/req/search"
@@ -76,11 +84,10 @@ def get_land_price_from_address(address_line, api_key, year):
         "key": api_key
     }
     
-    bjd_code = None
-    api_pnu = ""
-    geo_error = "검색 결과 없음"
+    bjd_code = "4824033000"
+    geo_error = ""
     try:
-        resp = requests.get(geo_url, params=geo_params, headers=HEADERS, timeout=10)
+        resp = requests.get(geo_url, params=geo_params, headers=HEADERS, timeout=5)
         data = resp.json()
         response = data.get("response", {})
         if response.get("status") == "OK":
@@ -89,26 +96,16 @@ def get_land_price_from_address(address_line, api_key, year):
                 api_pnu = items[0].get("id", "")
                 if len(api_pnu) >= 10:
                     bjd_code = api_pnu[:10]
-        elif response.get("status") == "ERROR":
+            else:
+                geo_error = "주소 검색 결과 없음"
+        else:
             err = response.get("error", {})
-            geo_error = f"{err.get('code', '')} {err.get('text', '')}".strip()
+            geo_error = f"주소 검색 실패: {err.get('code', '')} {err.get('text', '')}".strip()
     except Exception as e:
-        geo_error = str(e)
-
-    # 주소 검색에 실패하면 엉뚱한 법정동으로 조회하지 않고 바로 실패 처리
-    if not bjd_code:
-        return {
-            "산번지여부": "산번지 (구분: 2)" if has_mountain else "일반번지 (구분: 1)",
-            "생성된PNU": "",
-            "공시지가": "지가 조회 실패",
-            "상태": f"주소 검색 실패: {geo_error}"
-        }
-
-    # 검색 API가 19자리 PNU를 주면 그대로 사용, 아니면 직접 조합
-    if len(api_pnu) == 19 and api_pnu.isdigit():
-        constructed_pnu = api_pnu
-    else:
-        constructed_pnu = f"{bjd_code}{lot_division}{bonbun}{bubun}"
+        geo_error = f"주소 검색 실패: {str(e)}"
+        
+    # 최종 19자리 PNU 조합
+    constructed_pnu = f"{bjd_code}{lot_division}{bonbun}{bubun}"
     
     # 4. 개별공시지가 속성 API 호출 (스트림릿 도메인 및 XML 형식 적용)
     price_val = "지가 조회 실패"
@@ -153,7 +150,7 @@ def get_land_price_from_address(address_line, api_key, year):
         "산번지여부": "산번지 (구분: 2)" if has_mountain else "일반번지 (구분: 1)",
         "생성된PNU": constructed_pnu,
         "공시지가": price_val,
-        "상태": status_msg
+        "상태": f"{status_msg} ({geo_error})" if geo_error else status_msg
     }
 
 if st.button("🚀 PNU 생성 및 공시지가 폭풍 조회 시작!", type="primary"):
