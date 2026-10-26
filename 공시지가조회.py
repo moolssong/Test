@@ -1,3 +1,4 @@
+import os
 import streamlit as st
 import requests
 import pandas as pd
@@ -6,7 +7,10 @@ import re
 import xml.etree.ElementTree as ET
 
 def get_secret(name, default=""):
-    # secrets.toml이 없을 때 st.secrets 접근이 예외를 내므로 기본값으로 대체
+    # Render 등은 환경변수, Streamlit Cloud는 st.secrets에서 읽음
+    # (secrets.toml이 없을 때 st.secrets 접근이 예외를 내므로 기본값으로 대체)
+    if os.environ.get(name):
+        return os.environ[name]
     try:
         return st.secrets.get(name, default)
     except Exception:
