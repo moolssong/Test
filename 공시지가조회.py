@@ -15,7 +15,7 @@ col1, col2 = st.columns([2, 1])
 with col1:
     vworld_key = st.text_input(
         "🔑 브이월드(V-World) API 인증키",
-        value="BDBA5B54-21BB-4931-8C7C-D9FAFB79580",  # 스트림릿 등록용 키 기본 세팅
+        value=" 9BCCA82A-382C-49E6-829A-CB9D94B59CA4",  # 스트림릿 등록용 키 기본 세팅
         type="password"
     )
 with col2:
